@@ -1,4 +1,4 @@
-// #include "Dstar.h"
+#include "Dstar.h"
 #include "SurfaceExplorer.h"
 
 /* SurfaceExplorer()
@@ -94,7 +94,7 @@ MatrixXd SurfaceExplorer::findEndPoints() {
 		bool nextLayer = false;
 		for(int j=0; j<map3D[i].rows(); j++) {
 			for(int k=0; k<map3D[i].cols(); k++) {
-				if(map3D[i](j,k)==BUFFER_OBS) {
+				if(map3D[i](j,k)==BUFFER_SAFE) {
 					Vector3d point(k,j,i);
 					Matrix3d neighbors = checkNeighbors(point,4,OCCLUSION);
 					if (neighbors.sum()==1) {
@@ -114,11 +114,37 @@ MatrixXd SurfaceExplorer::findEndPoints() {
 	return endPoints;
 }
 
-MatrixXd SurfaceExplorer::findPathPoints() {
-	MatrixXd pathPoints(0,0);
-	return pathPoints;
+/* orderEndPoints(MatrixXd ep)
+ * ----------------------------------------------------------------------------
+ * For every pair of end points on each level, it should order them so the 
+ * up down motion of the quad goes back and forth like an S:
+ * ------------
+ * |
+ * ------------
+ *            |
+ * ------------
+ */
+MatrixXd SurfaceExplorer::orderEndPoints(MatrixXd ep) { // < -- FIX THIS
+	MatrixXd endPoints = ep;
+	Vector3d lastEndPoint = ep.block(1,0,1,3).transpose(); // 2nd point in first layer
+	for(int i=zStep+2; i<2*zMax; i+=2*zStep) {
+		double d1 = (ep.block(i,0,1,3).transpose()-lastEndPoint).squaredNorm();
+		double d2 = (ep.block(i+1,0,1,3).transpose()-lastEndPoint).squaredNorm();
+		if(d1>d2) {
+			endPoints.block(i,0,1,3) = ep.block(i+1,0,1,3);
+			endPoints.block(i+1,0,1,3) = ep.block(i,0,1,3);
+		}
+		lastEndPoint = ep.block(i+1,0,1,3).transpose();
+	}
+
+	return endPoints;
 }
 
+/* spatiallyVariantFilter(Vector3d location, int filterRadius, int value)
+ * ----------------------------------------------------------------------------
+ * The goal here is to look over a region of size filterRadius around a cell
+ * and change all the cells to the value given if they are empty
+ */
 bool SurfaceExplorer::spatiallyVariantFilter(Vector3d location, int filterRadius, int value) {
 	int x = location(0); int y = location(1); int z = location(2);
 	for(int i=x-filterRadius; i<=x+filterRadius; i++) {
@@ -133,6 +159,12 @@ bool SurfaceExplorer::spatiallyVariantFilter(Vector3d location, int filterRadius
 	return true;
 }
 
+/* expandSurface()
+ * ----------------------------------------------------------------------------
+ * Creates a buffer around the obstacle at half the distance of the sensor
+ * capability.  This will create a space for the quad to actively explore
+ * without risk of hitting the obstacle.  
+ */
 bool SurfaceExplorer::expandSurface() {
 	// buffer surfaces by half the distance the quad can view it
 	int filterRadius = int(distance2Surface/2/resolution);
@@ -141,7 +173,18 @@ bool SurfaceExplorer::expandSurface() {
 			for(int k=0; k<map3D[i].cols(); k++) {
 				if (map3D[i](j,k) == OBSTACLE) {
 					Vector3d loc(k,j,i);
-					spatiallyVariantFilter(loc,filterRadius,BUFFER_OBS);
+					spatiallyVariantFilter(loc,filterRadius-1,BUFFER_OBS);
+				}
+			}
+		}
+	}
+	// Add safe region at exactly half the distance
+	for(int i=0; i<zMax; i++) {
+		for(int j=0; j<map3D[i].rows(); j++) {
+			for(int k=0; k<map3D[i].cols(); k++) {
+				if (map3D[i](j,k) == BUFFER_OBS) {
+					Vector3d loc(k,j,i);
+					spatiallyVariantFilter(loc,1,BUFFER_SAFE);
 				}
 			}
 		}
@@ -260,6 +303,76 @@ bool SurfaceExplorer::fillOccludedSpace() {
 	return true;
 }
 
+bool SurfaceExplorer::orientTheta() {
+	// For each point in the plan, look at each layer and find all of the obstacles
+	// Place a distance on each obstacle.  Then find the min distance and take that
+	// obstacle and compute the angle between it and the path point.  Update the 
+	// plan matrix
+	plan.conservativeResize(plan.rows(),4);
+	vector<pair<Vector2d, double> > obstaclesAndDistances;
+	for(int i=0; i<plan.rows(); i++) {
+		int z = plan(i,2);
+		Vector2d planPoint = plan.block(i,0,1,2).transpose();
+		for(int j=0; j<map3D[z].rows(); j++) {
+			for(int k=0; k<map3d[z].cols(); k++) {
+				if(map3D[z](j,k) == OBSTACLE) {
+					Vector2d obstaclePoint(k,j);
+					double distance = (planPoint-obstaclePoint).squaredNorm();
+					obstaclesAndDistances.push_back(obstaclePoint,distance);
+				}
+			}
+		}
+		pair<Vector2d, double> min = obstaclesAndDistances[0];
+		for(int j=1; j<obstaclesAndDistances.size(); j++) {
+			if(obstaclesAndDistances[j].second<min.second) {
+				min = obstaclesAndDistances[j];
+			}
+		}
+		plan(i,3) = acos(min.dot(planPoint)/planPoint.norm()/min.norm());
+	}
+	return true;
+}
+
+MatrixXd SurfaceExplorer::plan() {
+	fillOccludedSpace();
+	expandSurface();
+	MatrixXd endPoints = findEndPoints();
+	MatrixXd ordered = orderEndPoints(endPoints);
+	Dstar *dstar;
+	dstar = new Dstar();
+	Vector2d g1 = endPoints.block(0,0,1,2).transpose();
+	Vector2d s1 = start.block(0,0,2,1);
+	dstar->init(s1,g1);
+	dstar->setMap(map3D[0]);
+	dstar->replan();
+	plan = dstar->getPath(0);
+	int numRows = plan.rows()-1;
+	int numCols = plan.cols();
+	plan.conservativeResize(numRows,numCols);
+	for(int z=0; z<zMax; z+=zStep) {
+		Vector2d s = endPoints.block(z,0,1,2).transpose();
+		Vector2d g = endPoints.block(z+1,0,1,2).transpose();
+		dstar->init(s,g);
+		dstar->setMap(map3D[z]);
+		dstar->replan();
+		MatrixXd morePlan = dstar->getPath(z);
+		MatrixXd newPlan(plan.rows()+morePlan.rows(),plan.cols());
+		newPlan << plan, morePlan;
+		plan = newPlan;
+	}
+	orientTheta();
+
+	return plan;
+}
+
+bool SurfaceExplorer::updateMap(MatrixXd locations, int value) {
+	for(int i=0; i<locations.rows(); i++) {
+		if(map3D[locations(i,2)](locations(i,1),locations(i,0)) != END_POINT)
+			map3D[locations(i,2)](locations(i,1),locations(i,0)) = i;
+	}
+	return true;
+}
+
 /* getMap()
  * ----------------------------------------------------------------------------
  * Returns the 3D map of the environment.  Internally, this map is modified
@@ -272,39 +385,55 @@ vector<MatrixXd> SurfaceExplorer::getMap() {
 }
 
 int main(int argc, char **argv) {
-	vector<MatrixXd> map(4,MatrixXd::Zero(30,30));
-	// map[0] << 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 0, 0, 0;
-	// map[1] << 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 0, 0, 0;
-	// map[2] << 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0;
-	// map[3] << 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0;
-	map[0].block(4,4,5,5) = MatrixXd::Ones(5,5);
-	map[1].block(4,5,4,4) = MatrixXd::Ones(4,4);
-	map[2].block(5,6,2,2) = MatrixXd::Ones(2,2);
-	map[3].block(7,7,1,1) = MatrixXd::Ones(1,1);
+	vector<MatrixXd> map(10,MatrixXd::Zero(30,30));
+	map[0].block(10,10,10,10) = MatrixXd::Ones(10,10);
+	map[1].block(12,12,8,8) = MatrixXd::Ones(8,8);
+	map[2].block(12,12,7,7) = MatrixXd::Ones(7,7);
+	map[3].block(13,12,6,7) = MatrixXd::Ones(6,7);
+	map[4].block(15,15,2,2) = MatrixXd::Ones(2,2);
+	map[5].block(15,15,2,2) = MatrixXd::Ones(2,2);
+	map[6].block(15,15,2,2) = MatrixXd::Ones(2,2);
+	map[7].block(15,15,2,2) = MatrixXd::Ones(2,2);
+	map[8].block(15,15,2,2) = MatrixXd::Ones(2,2);
+	map[9].block(16,16,1,1) = MatrixXd::Ones(1,1);
 
-	double resolution = 1; double zMax = 3; double zStep = 1; double d2s = 2;
+	double resolution = 1; double zMax = 10; double zStep = 2; double d2s = 4;
 	SurfaceExplorer se = SurfaceExplorer(resolution,d2s,zStep,zMax);
 	Vector3d start(1,0,0);
-	Vector3d observer(0,0,0);
+	Vector3d observer(15,0,0);
 	se.init(start,observer,map);
 	vector<MatrixXd> initial = se.getMap();
 
-	cout << initial[0] << endl << initial[1] << endl << initial[2] << endl << endl;
+	// cout << initial[0] << endl << initial[1] << endl << initial[2] << endl << endl;
 
-	se.fillOccludedSpace();
+	// se.fillOccludedSpace();
+	// vector<MatrixXd> result = se.getMap();
+
+	// cout << result[0] << endl << result[1] << endl << result[2] << endl << endl;
+
+	// se.expandSurface();
+	// vector<MatrixXd> expanded = se.getMap();
+
+	// cout << expanded[0] << endl << expanded[1] << endl << expanded[2] << endl << endl;
+
+	// MatrixXd n = se.findEndPoints();
+	// vector<MatrixXd> endPoints = se.getMap();
+
+	// cout << endPoints[0] << endl << endPoints[1] << endl << endPoints[2] << endl << endl;
+
+	// MatrixXd o = se.orderEndPoints(n);
+
+	// cout << o << endl;
+
+	MatrixXd path = se.plan();
+	cout << path << endl;
+
+	se.updateMap(path.block(0,0,path.rows(),3),PATH_POINT);
+	se.updateMap(start.transpose(),END_POINT);
 	vector<MatrixXd> result = se.getMap();
+	for(int i=0; i< result.size(); i++) {
+		cout << result[i] << endl;
+	}
 
-	cout << result[0] << endl << result[1] << endl << result[2] << endl << endl;
-
-	se.expandSurface();
-	vector<MatrixXd> expanded = se.getMap();
-
-	cout << expanded[0] << endl << expanded[1] << endl << expanded[2] << endl << endl;
-
-	MatrixXd n = se.findEndPoints();
-	vector<MatrixXd> endPoints = se.getMap();
-
-	cout << endPoints[0] << endl << endPoints[1] << endl << endPoints[2] << endl << endl;
-
-	return 1;s
+	return 1;
 }

@@ -4,6 +4,7 @@
 #include <Eigen>
 #include <vector>
 #include <iostream>
+#include <math.h>
 
 using namespace Eigen;
 using namespace std;
@@ -11,8 +12,9 @@ using namespace std;
 #define OCCLUSION 3
 #define OBSTACLE 1
 #define BUFFER_OBS 2
-#define BUFFER_OCC 4
+#define BUFFER_SAFE 4
 #define END_POINT 5
+#define PATH_POINT 7
 
 class SurfaceExplorer {
 	public:
@@ -22,6 +24,11 @@ class SurfaceExplorer {
 		bool				fillOccludedSpace();
 		bool				expandSurface();
 		MatrixXd 			findEndPoints();
+		MatrixXd			orderEndPoints(MatrixXd ep);
+		MatrixXd			plan();
+		bool				updateMap(MatrixXd locations, int value);
+
+		MatrixXd plan;
 
 	private:
 		vector<MatrixXd> map3D;
