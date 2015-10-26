@@ -400,14 +400,16 @@ MatrixXd SurfaceExplorer::planPath() {
 				cout << "Dstar failed to plan to home" << endl;
 			}
 			MatrixXd lastDStar = dstar[z+1]->getPath(z);
-			// CHECK ON DUPLICATE GOAL POINTS FOR THIS LAYER
 			Vector3d aboveStart3d = start;
 			aboveStart3d(2) = z;
+			// Lower the quad
 			MatrixXd moreEndPlan = bresenhamLine(aboveStart3d,start);
-			moreEndPlan = moreEndPlan.block(1,0,moreEndPlan.rows()-1,3);
-			endPlan.resize(lastDStar.rows()+moreEndPlan.rows(),lastDStar.cols());
+			MatrixXd temp = moreEndPlan.block(1,0,moreEndPlan.rows()-1,3);
+			moreEndPlan = temp;
+			endPlan.conservativeResize(lastDStar.rows()+moreEndPlan.rows(),lastDStar.cols());
 			endPlan << lastDStar, moreEndPlan;
-			endPlan = endPlan.block(1,0,endPlan.rows()-1,3);
+			temp = endPlan.block(1,0,endPlan.rows()-1,3);
+			endPlan = temp;
 		}
 		MatrixXd newPlan(plan.rows()+morePlan.rows()+endPlan.rows(),plan.cols());
 		newPlan << plan, morePlan, endPlan;
@@ -527,7 +529,7 @@ int main(int argc, char **argv) {
 	map[8].block(15,15,2,2) = MatrixXd::Ones(2,2);
 	map[9].block(16,16,1,1) = MatrixXd::Ones(1,1);
 
-	double resolution = 1; double zMax = 11; double zStep = 2; double d2s = 4;
+	double resolution = 1; double zMax = 12; double zStep = 2; double d2s = 4;
 	SurfaceExplorer se = SurfaceExplorer(resolution,d2s,zStep,zMax);
 	Vector3d start(1,0,0);
 	Vector3d observer(0,10,0);
