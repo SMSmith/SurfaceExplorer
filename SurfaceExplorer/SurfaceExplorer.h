@@ -5,6 +5,7 @@
 #include <vector>
 #include <iostream>
 #include <math.h>
+#include "Dstar.h"
 
 using namespace Eigen;
 using namespace std;
@@ -50,10 +51,10 @@ class SurfaceExplorer {
 
 };
 
-class strangeMapException: public exception {
-	virtual const char* what() const throw() {
-		return "Your map has inconsistant matrix sizes on each layer";
-	}
-} mapException;
+// class strangeMapException: public exception {
+// 	virtual const char* what() const throw() {
+// 		return "Your map has inconsistant matrix sizes on each layer";
+// 	}
+// };
 
 #endif

@@ -12,8 +12,8 @@ all:surfaceExplorer
 dstar: dstar/Dstar.h dstar/Dstar.cpp dstar/TestDstar.cpp
 	g++ ${FLAGS} dstar/Dstar.cpp dstar/TestDstar.cpp -o dStar ${LIBS}
 
-surfaceExplorer: SurfaceExplorer/SurfaceExplorer.h SurfaceExplorer/SurfaceExplorer.cpp 
-	g++ ${FLAGS} SurfaceExplorer/SurfaceExplorer.cpp dstar/Dstar.cpp -o surfaceExplorer ${LIBS}
+surfaceExplorer: SurfaceExplorer/SurfaceExplorer.h SurfaceExplorer/SurfaceExplorer.cpp SurfaceExplorer/TestSurfaceExplorer.cpp
+	g++ ${FLAGS} SurfaceExplorer/SurfaceExplorer.cpp dstar/Dstar.cpp SurfaceExplorer/TestSurfaceExplorer.cpp -o surfaceExplorer ${LIBS}
 
 clean:
 	rm -f surfaceExplorer dStar
