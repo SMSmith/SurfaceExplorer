@@ -31,4 +31,6 @@ Iniating the SurfaceExplorer and calling its init function allows you to call pl
 An example workflow is seen in TestSurfaceExplorer.cpp
 
 Call it like this:
+'''
 ./surfaceExplorer -s 10 3 2 -o 0 0 1 -m SurfaceExplorer/map3D.txt
+'''
