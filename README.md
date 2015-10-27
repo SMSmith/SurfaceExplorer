@@ -1,6 +1,19 @@
 # SurfaceExplorer
 A planning library for exploring surfaces in 3D while in view of a sensor
 
+## Dependencies
+# Eigen
+Just put the standard Eigen/ directory into the repo's root directory
+'''
+http://eigen.tuxfamily.org/index.php?title=Main_Page
+'''
+
+# Boost
+Make sure you have libboost-program-options-dev:
+'''
+sudo apt-get install libboost-program-options-dev
+'''
+
 ## Usage
 Initiate a SurfaceExplorer by providing the following items:
 * resolution (r) - the physical size of a cell (distance/cell) in whatever units you use (keep them consistant)
