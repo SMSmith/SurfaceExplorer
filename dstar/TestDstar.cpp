@@ -22,9 +22,10 @@ int main(int argc, char **argv) {
     po::options_description desc("This serves to test the dstar implementation");
     desc.add_options()
         ("help,h", "See the options below")
-        ("map,m", po::value<string>(), "Pass in the binary file for the map")
+        ("map,m", po::value<string>(), "Pass in the ascii file for the map")
         ("start,s", po::value<vector<int> >()->multitoken(), "give it a start position '-s 3 13'")
-        ("end,e", po::value<vector<int> >()->multitoken(), "give it an end position '-e 23 0'");
+        ("end,e", po::value<vector<int> >()->multitoken(), "give it an end position '-e 23 0'")
+        ;
     po::variables_map vm;
     po::store(po::parse_command_line(argc, argv, desc), vm);
     po::notify(vm);
@@ -60,7 +61,7 @@ int main(int argc, char **argv) {
     return 1;
 }
 
-/* bool loadMap(string fileName, MatrixXd& map)
+/* loadMap(string fileName, MatrixXd& map)
  * ----------------------------------------------
  * Loads a map into an eigen matrix from file
  * The map is ascii format, 0 is free, 1 is 

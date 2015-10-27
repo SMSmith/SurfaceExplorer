@@ -106,10 +106,8 @@ public:
     Dstar();
         bool        init(Vector2d s, Vector2d g);
         bool        updateCell(Vector2d c, double val);
-        bool        updateStart(Vector2d s);
-        bool        updateGoal(Vector2d g);
         bool        replan();
-        bool        printPath();
+        // bool        printPath();
         bool        setMap(MatrixXd m);
         MatrixXd    getPath(int layer);
 
@@ -134,16 +132,16 @@ public:
         bool        setG(state u, double g);
         double      setRHS(state u, double rhs);
         double      eightConnectedDist(state a, state b);
-        int         computeShortestPath();
+        int         findShortestPath();
         bool        updateVertex(state u);
-        bool        insert(state u);
-        bool        remove(state u);
-        double      trueDist(state a, state b);
+        bool        insertIntoOpen(state u);
+        // bool        remove(state u);
+        double      euclidieanDist(state a, state b);
         double      heuristic(state a, state b);
         state       calculateKey(state u);
-        bool        getSucc(state u, list<state> &s);
-        bool        getPred(state u, list<state> &s);
-        double      cost(state a, state b); 
+        bool        getSuccessors(state u, list<state> &s);
+        bool        getPredecessors(state u, list<state> &s);
+        double      calculateCost(state a, state b); 
         bool        occupied(state u);
         bool        isValid(state u);
         float       keyHashCode(state u);

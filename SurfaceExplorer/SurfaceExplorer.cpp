@@ -1,15 +1,20 @@
-#include "Dstar.h"
 #include "SurfaceExplorer.h"
 
 /* SurfaceExplorer()
  * ----------------------------------------------------------------------------
- * Set the distance per cell in the resulotion to start using the explorer.
+ * Set the following items to start the planner:
+ * resolution (r) - the physical size of a cell (distance/cell) in whatever 
+ * units you use (keep them consistant)
+ * distance2Surface (d2s) - the maximum physical distance the quad's sensor 
+ * can see the surface
+ * zStep (zs) - the physical distance the quad should advance between 2d scans
+ * zMax (zm) - the physical max height the quad should reach
  */
 SurfaceExplorer::SurfaceExplorer(double r, double d2s, double zs, double zm) {
 	resolution = r;
-	distance2Surface = d2s;
-	zStep = zs;
-	zMax = zm;
+	distance2Surface = int(d2s/resolution);
+	zStep = int(zs/resolution);
+	zMax = int(zm/resolution);
 }
 
 /* init(Vector3d s, Vector3d o, vector<MatrixXd>& m)
@@ -24,16 +29,37 @@ bool SurfaceExplorer::init(Vector3d s, Vector3d o, vector<MatrixXd>& m) {
 	start = s;
 	observer = o;
 
+	if(resolution>zStep || resolution>distance2Surface) {
+		cout << "resolution is unreasonable" << endl;
+		return false;
+	}
+
 	// Make sure all the layers of the map are the same size
 	int mapXYsize = m[0].size();
 	for(vector<int>::size_type i=0; i!=m.size(); i++) {
 		if (m[i].size() != mapXYsize) {
-			throw mapException;
+			cout << "map size is incosisntant on each layer" << std::endl;
+			return false;
 		}
 	}
 
 	// Store the map
 	map3D = m;
+
+	// Start point is off map
+	int zSize = map3D.size(); int ySize = map3D[0].rows(); int xSize = map3D[0].cols();
+	if(start(0)<0 || start(0)>=xSize || 
+	   start(1)<0 || start(1)>=ySize || 
+	   start(2)<0 || start(2)>=zSize) {
+		cout << "Start point is off map" << endl;
+		return false;
+	}
+	// if(observer(0)<0 || observer(0)>=xSize || 
+	//    observer(1)<0 || observer(1)>=ySize || 
+	//    observer(2)<0 || observer(2)>=zSize) {
+	// 	cout << "Observer is off map" << endl;
+	// 	return false;
+	// }
 
 	// zMax handles planning limits, if the map isn't big enough, need 
 	// to adjust
@@ -184,7 +210,7 @@ bool SurfaceExplorer::spatiallyVariantFilter(Vector3d location, int filterRadius
  */
 bool SurfaceExplorer::expandSurface() {
 	// buffer surfaces by half the distance the quad can view it
-	int filterRadius = int(distance2Surface/2/resolution);
+	int filterRadius = int(distance2Surface/2);
 	for(int z=0; z<zMax; z++) {
 		for(int y=0; y<map3D[z].rows(); y++) {
 			for(int x=0; x<map3D[z].cols(); x++) {
@@ -357,15 +383,17 @@ bool SurfaceExplorer::orientTheta() {
 }
 
 MatrixXd SurfaceExplorer::planPath() {
+	// Mark the spaces that can't be seen by the sensor
 	fillOccludedSpace();
+	// Expand the surface to give the quad a safety buffer
 	expandSurface();
+	// Find the best start and end points on each layer
 	MatrixXd endPoints = findEndPoints();
-	// cout << endPoints << endl;
+	// Order the end points
 	MatrixXd ordered = orderEndPoints(endPoints);
-	// cout << ordered << endl;
-	// dstar[0] = new Dstar();
 	Vector2d g1 = ordered.block(0,0,1,2).transpose();
 	Vector2d s1 = start.block(0,0,2,1);
+	// Find the inital plan from the starting point to the first end point
 	dstar[0]->init(s1,g1);
 	dstar[0]->setMap(map3D[0]);
 	dstar[0]->replan();
@@ -373,10 +401,11 @@ MatrixXd SurfaceExplorer::planPath() {
 	int numRows = plan.rows()-1;
 	int numCols = plan.cols();
 	plan.conservativeResize(numRows,numCols);
+	// Plan a path on each layer
 	for(int z=0; z<zMax; z+=zStep) {
 		Vector2d s = ordered.block(2*z,0,1,2).transpose();
 		Vector2d g = ordered.block(2*z+1,0,1,2).transpose();
-		// if (z>0) dstar[z] = new Dstar();
+		// Plan the endPoint to endPoint path on each layer
 		dstar[z]->init(s,g);
 		dstar[z]->setMap(map3D[z]);
 		if(!dstar[z]->replan()) {
@@ -411,6 +440,7 @@ MatrixXd SurfaceExplorer::planPath() {
 			temp = endPlan.block(1,0,endPlan.rows()-1,3);
 			endPlan = temp;
 		}
+		// Connect the plans
 		MatrixXd newPlan(plan.rows()+morePlan.rows()+endPlan.rows(),plan.cols());
 		newPlan << plan, morePlan, endPlan;
 		plan = newPlan;
@@ -516,38 +546,62 @@ vector<MatrixXd> SurfaceExplorer::getMap() {
 	return map3D;
 }
 
-int main(int argc, char **argv) {
-	vector<MatrixXd> map(10,MatrixXd::Zero(30,30));
-	map[0].block(10,10,10,10) = MatrixXd::Ones(10,10);
-	map[1].block(12,12,8,8) = MatrixXd::Ones(8,8);
-	map[2].block(12,12,7,7) = MatrixXd::Ones(7,7);
-	map[3].block(13,12,6,7) = MatrixXd::Ones(6,7);
-	map[4].block(15,15,2,2) = MatrixXd::Ones(2,2);
-	map[5].block(15,15,2,2) = MatrixXd::Ones(2,2);
-	map[6].block(15,15,2,2) = MatrixXd::Ones(2,2);
-	map[7].block(15,15,2,2) = MatrixXd::Ones(2,2);
-	map[8].block(15,15,2,2) = MatrixXd::Ones(2,2);
-	map[9].block(16,16,1,1) = MatrixXd::Ones(1,1);
+// /* main(int argc, char ** argv)
+//  * ----------------------------------------------------------------------------
+//  * Example usage on some fake map data.  The data has 10 levels with one 
+//  * obstacle that diminishes in size as you go up the layers (kind of like a 
+//  * cell phone tower).  
+//  */
+// int main(int argc, char **argv) {
+// 	po::options_description desc("This serves to test SurfaceExplorer by giving
+// 								  it different initial conditions");
+// 	desc.add_options()
+// 		("help,h", "See the options below")
+// 		("map,m", po::value<string>(), "Provide a map file, example in repo")
+// 		("start,s", po::value<vector<int> >()->multitoken(), "Provide the start point")
+// 		("end,e", po::value<vector<int> >()->multitoken(), "Provide the end point")
+// 		("observer,o", po::value<vector<int> >()->multitoken(), "Provide the sensor's observation point")
+// 		("z_max,m", po::value<double>(), "Provide the maximum physical height")
+// 		("z_step,z", po::value<double>(), "Provide the physical step height")
 
-	double resolution = 1; double zMax = 12; double zStep = 2; double d2s = 4;
-	SurfaceExplorer se = SurfaceExplorer(resolution,d2s,zStep,zMax);
-	Vector3d start(1,0,0);
-	Vector3d observer(0,10,0);
-	se.init(start,observer,map);
-	vector<MatrixXd> initial = se.getMap();
 
-	MatrixXd path = se.planPath();
-	for(int i=0; i<path.rows(); i++) {
-		path(i,3) = path(i,3)*180/M_PI;
-	}
-	cout << path << endl;
+// 	// Create a map
+// 	vector<MatrixXd> map(10,MatrixXd::Zero(30,30));
+// 	map[0].block(10,10,10,10) = MatrixXd::Ones(10,10);
+// 	map[1].block(12,12,8,8) = MatrixXd::Ones(8,8);
+// 	map[2].block(12,12,7,7) = MatrixXd::Ones(7,7);
+// 	map[3].block(13,12,6,7) = MatrixXd::Ones(6,7);
+// 	map[4].block(15,15,2,2) = MatrixXd::Ones(2,2);
+// 	map[5].block(15,15,2,2) = MatrixXd::Ones(2,2);
+// 	map[6].block(15,15,2,2) = MatrixXd::Ones(2,2);
+// 	map[7].block(15,15,2,2) = MatrixXd::Ones(2,2);
+// 	map[8].block(15,15,2,2) = MatrixXd::Ones(2,2);
+// 	map[9].block(16,16,1,1) = MatrixXd::Ones(1,1);
 
-	se.updateMapByLocation(path.block(0,0,path.rows(),3),PATH_POINT);
-	se.updateMapByLocation(start.transpose(),END_POINT);
-	vector<MatrixXd> result = se.getMap();
-	for(int z=0; z<result.size(); z++) {
-		cout << result[z] << endl;
-	}
+// 	// The parameters for the map - note zMax can be higher than the map's
+// 	// highest layer.  
+// 	double resolution = 1; double zMax = 12; double zStep = 2; double d2s = 4;
+// 	SurfaceExplorer se = SurfaceExplorer(resolution,d2s,zStep,zMax);
+// 	Vector3d start(1,0,0);
+// 	Vector3d observer(0,10,0);
+// 	se.init(start,observer,map);
 
-	return 1;
-}
+// 	// Plan the path and convert orientation to degrees for readability
+// 	MatrixXd path = se.planPath();
+// 	for(int i=0; i<path.rows(); i++) {
+// 		path(i,3) = path(i,3)*180/M_PI;
+// 	}
+// 	cout << path << endl;
+
+// 	// Draw the path points on the map for visualization
+// 	se.updateMapByLocation(path.block(0,0,path.rows(),3),PATH_POINT);
+// 	// se.updateMapByLocation(start.transpose(),END_POINT);
+
+// 	// Draw the map layers to show the decision path
+// 	vector<MatrixXd> result = se.getMap();
+// 	for(int z=0; z<result.size(); z++) {
+// 		cout << result[z] << endl;
+// 	}
+
+// 	return 1;
+// }

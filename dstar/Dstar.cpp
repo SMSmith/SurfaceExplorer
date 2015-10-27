@@ -99,12 +99,12 @@ bool Dstar::init(Vector2d s, Vector2d g) {
  * Checks if a cell is in the hash table, if not it adds it in.
  */
 bool Dstar::makeNewCell(state u) {
-    if (cellHash.find(u) != cellHash.end()) return;
-
-    cellInfo tmp;
-    tmp.g       = tmp.rhs = heuristic(u,s_goal);
-    tmp.cost    = C1;
-    cellHash[u] = tmp;
+    if (!(cellHash.find(u) != cellHash.end())) {
+        cellInfo tmp;
+        tmp.g       = tmp.rhs = heuristic(u,s_goal);
+        tmp.cost    = C1;
+        cellHash[u] = tmp;
+    }
 
     return true;
 }
@@ -135,9 +135,11 @@ double Dstar::getRHS(state u) {
  * ----------------------------------------------------------------------------
  * Sets the G value for state u
  */
-void Dstar::setG(state u, double g) {
+bool Dstar::setG(state u, double g) {
     makeNewCell(u);  
     cellHash[u].g = g; 
+
+    return true;
 }
 
 /* setRHS(state u, double rhs)
@@ -166,15 +168,11 @@ double Dstar::eightConnectedDist(state a, state b) {
     return ((M_SQRT2-1.0)*min + max);
 }
 
-/* computeShortestPath()
+/* findShortestPath()
  * ----------------------------------------------------------------------------
  * Stops planning after maxSteps, usually caused by obstacle containment.  
- * Returns a status integer based on the planning outcome:
- * -1 for took too long
- * 1 for success
- * 0 for
 */
-int Dstar::computeShortestPath() {
+int Dstar::findShortestPath() {
     list<state> s;
     list<state>::iterator i;
 
@@ -211,16 +209,16 @@ int Dstar::computeShortestPath() {
         state k_old = u;
 
         if (k_old < calculateKey(u)) { // u is out of date
-            insert(u);
+            insertIntoOpen(u);
         } else if (getG(u) > getRHS(u)) { // needs update (got better)
             setG(u,getRHS(u));
-            getPred(u,s);
+            getPredecessors(u,s);
             for (i=s.begin();i != s.end(); i++) {
                 updateVertex(*i);
             }
         } else {   // g <= rhs, state has got worse
             setG(u,INFINITY);
-            getPred(u,s);
+            getPredecessors(u,s);
             for (i=s.begin();i != s.end(); i++) {
                 updateVertex(*i);
             }
@@ -235,7 +233,7 @@ int Dstar::computeShortestPath() {
  * Returns true if x and y are within floating point error, false otherwise.
  * Serves as equality for floating point numbers.
  */
-void Dstar::close(double x, double y) {
+bool Dstar::close(double x, double y) {
     if (std::isinf(x) && std::isinf(y)) return true;
     return (fabs(x-y) < 0.00001);
 }
@@ -245,31 +243,33 @@ void Dstar::close(double x, double y) {
  * Handles RHS values that are not equal to g (meaning the map has been 
  * updated).
  */
-void Dstar::updateVertex(state u) {
+bool Dstar::updateVertex(state u) {
     list<state> s;
     list<state>::iterator i;
 
     if (u != s_goal) {
-        getSucc(u,s);
+        getSuccessors(u,s);
         double tmp = INFINITY;
         double tmp2;
 
         for (i=s.begin();i != s.end(); i++) {
-            tmp2 = getG(*i) + cost(u,*i);
+            tmp2 = getG(*i) + calculateCost(u,*i);
             if (tmp2 < tmp) tmp = tmp2;
         }
 
         if (!close(getRHS(u),tmp)) setRHS(u,tmp);
     }
 
-    if (!close(getG(u),getRHS(u))) insert(u);
+    if (!close(getG(u),getRHS(u))) insertIntoOpen(u);
+
+    return true;
 }
 
-/* insert(state u) 
+/* insertIntoOpen(state u) 
  * ----------------------------------------------------------------------------
  * Inserts the state u into the openList and the openHash.
  */
-void Dstar::insert(state u) {
+bool Dstar::insertIntoOpen(state u) {
     ds_oh::iterator cur;
     float csum;
 
@@ -279,324 +279,235 @@ void Dstar::insert(state u) {
 
     openHash[u] = csum;
     openList.push(u);
+
+    return true;
 } 
 
-/* remove(state u)
- * ----------------------------------------------------------------------------
- * Removes state u from openHash. The state is removed from the
- * openList in replan to save computation.
- */
-void Dstar::remove(state u) {
-    ds_oh::iterator cur = openHash.find(u);
-    if (cur == openHash.end()) return;
-    openHash.erase(cur);
-}
-
-
-/* trueDist(state a, state b) 
+/* euclidieanDist(state a, state b) 
  * ----------------------------------------------------------------------------
  * Euclidean cost between state a and state b (thanks Eigen)
  */
-double Dstar::trueDist(state a, state b) {
-return (a.pos-b.pos).norm();
+double Dstar::euclidieanDist(state a, state b) {
+    return (a.pos-b.pos).norm();
 }
 
 /* heuristic(state a, state b)
  * ----------------------------------------------------------------------------
  * The heristic we use is the 8-way distance
  * scaled by a constant C1 (should be set to <= min cost).
+ * One could use a different heuristic if interested.  
  */
 double Dstar::heuristic(state a, state b) {
-return eightConnectedDist(a,b)*C1;
+    return eightConnectedDist(a,b)*C1;
 }
 
 /* calculateKey(state u)
-* ----------------------------------------------------------------------------
-* As per [S. Koenig, 2002]
-*/
+ * ----------------------------------------------------------------------------
+ * Produces the key for a state for fast look up.
+ */
 state Dstar::calculateKey(state u) {
+    double val = fmin(getRHS(u),getG(u));
 
-double val = fmin(getRHS(u),getG(u));
+    u.k(0)  = val + heuristic(u,s_start) + k_m;
+    u.k(1) = val;
 
-u.k(0)  = val + heuristic(u,s_start) + k_m;
-u.k(1) = val;
-
-return u;
-
+    return u;
 }
 
-/* double Dstar::cost(state a, state b)
-* ----------------------------------------------------------------------------
-* Returns the cost of moving from state a to state b. This could be
-* either the cost of moving off state a or onto state b, we went with
-* the former. This is also the 8-way cost.
-*/
-double Dstar::cost(state a, state b) {
+/* cost(state a, state b)
+ * ----------------------------------------------------------------------------
+ * Returns the cost of moving from state a to state b. This could be
+ * either the cost of moving off state a or onto state b, we went with
+ * the former. This is also the 8-way cost.
+ */
+double Dstar::calculateCost(state a, state b) {
+    Vector2d magDif = (a.pos-b.pos).cwiseAbs();
+    double scale = 1;
 
-Vector2d magDif = (a.pos-b.pos).cwiseAbs();
-double scale = 1;
+    if (magDif.sum()>1) scale = M_SQRT2;
 
-if (magDif.sum()>1) scale = M_SQRT2;
-
-if (cellHash.count(a) == 0) return scale*C1;
-return scale*cellHash[a].cost;
-
-}
-/* void Dstar::updateCell(int x, int y, double val)
-* ----------------------------------------------------------------------------
-* As per [S. Koenig, 2002]
-*/
-void Dstar::updateCell(Vector2d c, double val) {
-
-state u;
-
-u.pos = c;
-if ((u == s_start) || (u == s_goal)) return;
-
-makeNewCell(u); 
-cellHash[u].cost = val;
-
-updateVertex(u);
+    if (cellHash.count(a) == 0) return scale*C1;
+    return scale*cellHash[a].cost;
 }
 
-/* void Dstar::getSucc(state u,list<state> &s)
-* ----------------------------------------------------------------------------
-* Returns a list of successor states for state u, since this is an
-* 8-way graph this list contains all of a cells neighbours. Unless
-* the cell is occupied in which case it has no successors. 
-*/
-void Dstar::getSucc(state u,list<state> &s) {
+/* updateCell(int x, int y, double val)
+ * ----------------------------------------------------------------------------
+ * Makes a new cell for the state position with the cost value passed
+ */
+bool Dstar::updateCell(Vector2d c, double val) {
+    state u;
 
-s.clear();
-u.k << -1, -1;
+    u.pos = c;
+    if (!((u == s_start) || (u == s_goal))) {
+        makeNewCell(u); 
+        cellHash[u].cost = val;
 
-if (occupied(u)) return;
+        updateVertex(u);
+    }
 
-u.pos(0) += 1;
-s.push_front(u);
-u.pos(1) += 1;
-s.push_front(u);
-u.pos(0) -= 1;
-s.push_front(u);
-u.pos(0) -= 1;
-s.push_front(u);
-u.pos(1) -= 1;
-s.push_front(u);
-u.pos(1) -= 1;
-s.push_front(u);
-u.pos(0) += 1;
-s.push_front(u);
-u.pos(0) += 1;
-s.push_front(u);
-
+    return true;
 }
 
-/* void Dstar::getPred(state u,list<state> &s)
-* ----------------------------------------------------------------------------
-* Returns a list of all the predecessor states for state u. Since
-* this is for an 8-way connected graph the list contails all the
-* neighbours for state u. Occupied neighbours are not added to the
-* list.
-*/
-void Dstar::getPred(state u,list<state> &s) {
+/* getSuccessors(state u,list<state> &s)
+ * ----------------------------------------------------------------------------
+ * Returns a list of successors states for state u, since this is an
+ * 8-way graph this list contains all of the cells neigbors. An occupied cell
+ * has no neighbors.
+ */
+bool Dstar::getSuccessors(state u,list<state> &s) {
+    s.clear();
+    u.k << -1, -1;
 
-s.clear();
-u.k << -1, -1;
-
-u.pos(0) += 1;
-if (!occupied(u)) s.push_front(u);
-u.pos(1) += 1;
-if (!occupied(u)) s.push_front(u);
-u.pos(0) -= 1;
-if (!occupied(u)) s.push_front(u);
-u.pos(0) -= 1;
-if (!occupied(u)) s.push_front(u);
-u.pos(1) -= 1;
-if (!occupied(u)) s.push_front(u);
-u.pos(1) -= 1;
-if (!occupied(u)) s.push_front(u);
-u.pos(0) += 1;
-if (!occupied(u)) s.push_front(u);
-u.pos(0) += 1;
-if (!occupied(u)) s.push_front(u);
-
+    if (!occupied(u)) {
+        u.pos(0) += 1;
+        s.push_front(u);
+        u.pos(1) += 1;
+        s.push_front(u);
+        u.pos(0) -= 1;
+        s.push_front(u);
+        u.pos(0) -= 1;
+        s.push_front(u);
+        u.pos(1) -= 1;
+        s.push_front(u);
+        u.pos(1) -= 1;
+        s.push_front(u);
+        u.pos(0) += 1;
+        s.push_front(u);
+        u.pos(0) += 1;
+        s.push_front(u);
+    }
+    return true;
 }
 
-/* void Dstar::updateStart(int x, int y)
-* ----------------------------------------------------------------------------
-* Update the position of the robot, this does not force a replan.
-*/
-void Dstar::updateStart(Vector2d s) {
+/* getPredecessors(state u,list<state> &s)
+ * ----------------------------------------------------------------------------
+ * Returns a list of all the predecessor states for state u. Since
+ * this is for an 8-way connected graph the list contails all the
+ * neighbors for state u. Occupied neighbors are ignored from the list
+ */
+bool Dstar::getPredecessors(state u,list<state> &s) {
+    s.clear();
+    u.k << -1, -1;
 
-s_start.pos = s;
+    u.pos(0) += 1;
+    if (!occupied(u)) s.push_front(u);
+    u.pos(1) += 1;
+    if (!occupied(u)) s.push_front(u);
+    u.pos(0) -= 1;
+    if (!occupied(u)) s.push_front(u);
+    u.pos(0) -= 1;
+    if (!occupied(u)) s.push_front(u);
+    u.pos(1) -= 1;
+    if (!occupied(u)) s.push_front(u);
+    u.pos(1) -= 1;
+    if (!occupied(u)) s.push_front(u);
+    u.pos(0) += 1;
+    if (!occupied(u)) s.push_front(u);
+    u.pos(0) += 1;
+    if (!occupied(u)) s.push_front(u);
 
-k_m += heuristic(s_last,s_start);
-
-s_start = calculateKey(s_start);
-s_last  = s_start;
-
+    return true;
 }
 
-/* void Dstar::updateGoal(int x, int y)
-* ----------------------------------------------------------------------------
-* This is somewhat of a hack, to change the position of the goal we
-* first save all of the non-empty on the map, clear the map, move the
-* goal, and re-add all of non-empty cells. Since most of these cells
-* are not between the start and goal this does not seem to hurt
-* performance too much. Also it free's up a good deal of memory we
-* likely no longer use.
-*/
-void Dstar::updateGoal(Vector2d g) {
-
-list< pair<Vector2d, double> > toAdd;
-pair<Vector2d, double> tp;
-
-ds_ch::iterator i;
-list< pair<Vector2d, double> >::iterator kk;
-
-for(i=cellHash.begin(); i!=cellHash.end(); i++) {
-if (!close(i->second.cost, C1)) {
-tp.first = i->first.pos;
-tp.second = i->second.cost;
-toAdd.push_back(tp);
-}
-}
-
-cellHash.clear();
-openHash.clear();
-
-while(!openList.empty())
-openList.pop();
-
-k_m = 0;
-
-s_goal.pos = g;
-
-cellInfo tmp;
-tmp.g = tmp.rhs =  0;
-tmp.cost = C1;
-
-cellHash[s_goal] = tmp;
-
-tmp.g = tmp.rhs = heuristic(s_start,s_goal);
-tmp.cost = C1;
-cellHash[s_start] = tmp;
-s_start = calculateKey(s_start);
-
-s_last = s_start;    
-
-for (kk=toAdd.begin(); kk != toAdd.end(); kk++) {
-Vector2d c = kk->first;
-updateCell(c, kk->second);
-}
-
-}
-
-/* bool Dstar::replan()
-* ----------------------------------------------------------------------------
-* Updates the costs for all cells and computes the shortest path to
-* goal. Returns true if a path is found, false otherwise. The path is
-* computed by doing a greedy search over the cost+g values in each
-* cells. In order to get around the problem of the robot taking a
-* path that is near a 45 degree angle to goal we break ties based on
-*  the metric euclidean(state, goal) + euclidean(state,start). 
-*/
+/* replan()
+ * ----------------------------------------------------------------------------
+ * Updates the costs for all cells and computes the shortest path to
+ * goal. Returns true if a path is found, false otherwise. The path is
+ * computed by doing a greedy search over the cost+g values in each
+ * cells. 
+ */
 bool Dstar::replan() {
+    path.clear();
 
-path.clear();
+    int res = findShortestPath();
+    if (res < 0) {
+        //cout << "NO PATH TO GOAL" << endl;
+        return false;
+    }
+    list<state> n;
+    list<state>::iterator i;
 
-int res = computeShortestPath();
-//printf("res: %d ols: %d ohs: %d tk: [%f %f] sk: [%f %f] sgr: (%f,%f)\n",res,openList.size(),openHash.size(),openList.top().k(0),openList.top().k(1), s_start.k(0), s_start.k(1),getRHS(s_start),getG(s_start));
-if (res < 0) {
-fprintf(stderr, "NO PATH TO GOAL\n");
-return false;
-}
-list<state> n;
-list<state>::iterator i;
+    state cur = s_start; 
 
-state cur = s_start; 
+    if (std::isinf(getG(s_start))) {
+        // cout << "NO PATH TO GOAL" << endl;
+        return false;
+    }
 
-if (std::isinf(getG(s_start))) {
-// fprintf(stderr, "NO PATH TO GOAL\n");
-return false;
-}
+    while(cur != s_goal) {
+        path.push_back(cur);
+        getSuccessors(cur, n);
 
-while(cur != s_goal) {
+        if (n.empty()) {
+            // cout << "NO PATH TO GOAL" << endl;
+            return false;
+        }
 
-path.push_back(cur);
-getSucc(cur, n);
+        double cmin = INFINITY;
+        double tmin;
+        state smin;
 
-if (n.empty()) {
-// fprintf(stderr, "NO PATH TO GOAL\n");
-return false;
-}
+        for (i=n.begin(); i!=n.end(); i++) {
+            double val  = calculateCost(cur,*i);
+            // (Euclidean) cost to goal + cost to pred
+            double val2 = euclidieanDist(*i,s_goal) + euclidieanDist(s_start,*i);
+            val += getG(*i);
 
-double cmin = INFINITY;
-double tmin;
-state smin;
-
-for (i=n.begin(); i!=n.end(); i++) {
-
-//if (occupied(*i)) continue;
-double val  = cost(cur,*i);
-double val2 = trueDist(*i,s_goal) + trueDist(s_start,*i); // (Euclidean) cost to goal + cost to pred
-val += getG(*i);
-
-if (close(val,cmin)) {
-if (tmin > val2) {
-tmin = val2;
-cmin = val;
-smin = *i;
-}
-} else if (val < cmin) {
-tmin = val2;
-cmin = val;
-smin = *i;
-}
-}
-n.clear();
-cur = smin;
-}
-path.push_back(s_goal);
-return true;
+            if (close(val,cmin)) {
+                if (tmin > val2) {
+                    tmin = val2;
+                    cmin = val;
+                    smin = *i;
+                }
+            } else if (val < cmin) {
+                tmin = val2;
+                cmin = val;
+                smin = *i;
+            }
+        }
+        n.clear();
+        cur = smin;
+    }
+    path.push_back(s_goal);
+    return true;
 }
 
-/* bool Dstar::setMap(MatrixXd m)
-* --------------------------------------------------------------------------------------------
-* Sets the map for the planning algorithm.
-* Obstacles are 1, 0's are open
-*/
+/* setMap(MatrixXd m)
+ * --------------------------------------------------------------------------------------------
+ * Sets the map for the planning algorithm.
+ * Obstacles are 1, 0's are open
+ */
 bool Dstar::setMap(MatrixXd m) {
-matrixMap.resize(m.rows(),m.cols());
-matrixMap = m;
-for(int i=0; i<m.rows(); i++) {
-for(int j=0; j<m.cols(); j++) {
-if(m(i,j)==OBSTACLE || m(i,j)==OCCLUSION || m(i,j)==BUFFER_OBS) {
-Vector2d v(j,i);
-updateCell(v,-1);
-}
-}
-}
-return true;
+    matrixMap.resize(m.rows(),m.cols());
+    matrixMap = m;
+    for(int i=0; i<m.rows(); i++) {
+        for(int j=0; j<m.cols(); j++) {
+            if(m(i,j)==OBSTACLE || m(i,j)==OCCLUSION || m(i,j)==BUFFER_OBS) {
+                Vector2d v(j,i);
+                updateCell(v,-1);
+            }
+        }
+    }
+    return true;
 }
 
-/* bool Dstar::printPath()
-* --------------------------------------------------------------------------------------------
-* Prints every cell in the optimal path and
-* the final map with 7's as the path, 1's 
-* as the obstacles and 0's as not traveresed
-*/
-bool Dstar::printPath() {
-list<state>::iterator iter;
+// /* printPath()
+//  * --------------------------------------------------------------------------------------------
+//  * Prints every cell in the optimal path and
+//  * the final map with 7's as the path, 1's 
+//  * as the obstacles and 0's as not traveresed
+//  */
+// bool Dstar::printPath() {
+// list<state>::iterator iter;
 
-for(iter=path.begin(); iter != path.end(); iter++) {
-cout << *iter;
-if(matrixMap.size()>0) {
-matrixMap(iter->pos(1),iter->pos(0)) = 7;
-}
-}
-cout << endl;
-cout << matrixMap << endl;
+// for(iter=path.begin(); iter != path.end(); iter++) {
+// cout << *iter;
+// if(matrixMap.size()>0) {
+// matrixMap(iter->pos(1),iter->pos(0)) = 7;
+// }
+// }
+// cout << endl;
+// cout << matrixMap << endl;
 
-return true;
-}
+// return true;
+// }
