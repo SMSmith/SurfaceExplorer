@@ -74,6 +74,7 @@ int main(int argc, char **argv) {
 	// Load the map - example in repo
 	vector<MatrixXd> map(10,MatrixXd::Zero(30,30));
 	if(!vm["map"].empty()) {
+		map.clear();
 		loadMap3D(vm["map"].as<string>(),map);
 	}
 	else {
@@ -128,14 +129,18 @@ bool loadMap3D(string fileName, vector<MatrixXd>& map) {
 	while(!mapFile.eof()) {
 		string line;
 		getline(mapFile,line);
-		if(line.at(0)==',') {
+		// cout << line << endl;
+		if(!mapFile.eof() && line.length()>0 && line.at(0)==',') {
 			lines.push_back(layer);
 			layer.clear();
 		}
-		else layer.push_back(line);
+		else if (!mapFile.eof()) layer.push_back(line);
 	}
 
 	for(int z=0; z<lines.size(); z++) {
+		MatrixXd lyr(lines[z].size(),lines[z][0].length());
+		map.push_back(lyr);
+		// cout << map[z].rows() << " " << map[z].cols() << endl;
 		for(int y=0; y<lines[z].size(); y++) {
 			for(int x=0; x<lines[z][y].length(); x++) {
 				map[z](y,x) = ((int) (lines[z][y].at(x)-'0'));
