@@ -25,6 +25,18 @@ You can initialize the explorer by passing the following items to init:
 Iniating the SurfaceExplorer and calling its init function allows you to call planPath() which will generate the 3D plan from start point, through imaging the structure and back to the start point, while staying in sight of the sensor. planPath will return a MatrixXd, size Nx4 where N is the number of points in the path and each row corresponds to a point in (x,y,z,theta). Theta is in radians.
 
 An example workflow is seen in TestSurfaceExplorer.cpp
+Use -h for help on the inputs
+> make
+> ./surfaceExlporer -h
 
-Call it like this:
+Options are as follows:
+* map (-m) a map file that contains the layers separated by commas.  An example is shown in SurfaceExplorer/map3D.txt
+* start (-s) pass 3 integers to specify the cell of the start point
+* observer (-o) pass 3 integers to specify the cell of the observer
+* z_max (-z) the maximum z height the quad should travel to
+* z_step (-i) the distance the quad should travel between each layer
+* resolution (-r) the distance/cell
+* sensor_max (-d) the maximum range of the sensor (the max distance to the surface)
+
+An example looks like this:
 > ./surfaceExplorer -s 10 3 2 -o 0 0 1 -m SurfaceExplorer/map3D.txt
