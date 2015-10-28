@@ -2,11 +2,11 @@
 A planning library for exploring surfaces in 3D while in view of a sensor
 
 ## Dependencies
-# Eigen
+### Eigen
 Just put the standard Eigen/ directory into the repo's root directory
 > http://eigen.tuxfamily.org/index.php?title=Main_Page
 
-# Boost
+### Boost
 Make sure you have libboost-program-options-dev:
 > sudo apt-get install libboost-program-options-dev
 
