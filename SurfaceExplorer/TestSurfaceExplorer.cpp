@@ -46,7 +46,7 @@ int main(int argc, char **argv) {
 	// Observer point as x y z Eigen vector
 	Vector3d observer(0,0,0);
 	vector<int> observerPoint;
-	if(!vm["start"].empty() && (observerPoint=vm["start"].as<vector<int> >()).size()==3) {
+	if(!vm["observer"].empty() && (observerPoint=vm["observer"].as<vector<int> >()).size()==3) {
 		observer(0) = observerPoint[0];
 		observer(1) = observerPoint[1];
 		observer(2) = observerPoint[2];
