@@ -54,12 +54,24 @@ bool SurfaceExplorer::init(Vector3d s, Vector3d o, vector<MatrixXd>& m) {
 		cout << "Start point is off map" << endl;
 		return false;
 	}
-	// if(observer(0)<0 || observer(0)>=xSize || 
-	//    observer(1)<0 || observer(1)>=ySize || 
-	//    observer(2)<0 || observer(2)>=zSize) {
-	// 	cout << "Observer is off map" << endl;
-	// 	return false;
-	// }
+	// Observer is off of the map (Not necessarily bad, but easier to constrain the problem)
+	if(observer(0)<0 || observer(0)>=xSize || 
+	   observer(1)<0 || observer(1)>=ySize || 
+	   observer(2)<0 || observer(2)>=zSize) {
+		cout << "Observer is off map" << endl;
+		return false;
+	}
+
+	// Start point is on top of an obstacle
+	if(map3D[start(2)](start(1),start(0))==1) {
+		cout << "Start position is on top of an obstacle." << endl;
+		return false;
+	}
+	// Observer is on top of an obstacle
+	if(map3D[observer(2)](observer(1),observer(0))==1) {
+		cout << "Observer position is on top of an obstacle." << endl;
+		return false;
+	}
 
 	// zMax handles planning limits, if the map isn't big enough, need 
 	// to adjust
